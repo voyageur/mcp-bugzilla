@@ -18,6 +18,8 @@ from fastmcp.exceptions import PromptError, ResourceError, ToolError, Validation
 
 from .mcp_utils import Bugzilla, mcp_log
 
+import os
+
 # The FastMCP instance
 mcp = FastMCP("Bugzilla")
 
@@ -30,10 +32,18 @@ base_url: str = ""
 # Global variable for read-only mode
 read_only: bool = False
 
+# Global Bugzilla client for stdio mode (no HTTP headers available)
+_stdio_bz: Optional[Bugzilla] = None
+
 
 @asynccontextmanager
 async def get_bz(headers: dict = CurrentHeaders()) -> Bugzilla:
     """Dependency to get the current Bugzilla client"""
+    # In stdio mode, use the pre-initialized global client
+    if _stdio_bz is not None:
+        yield _stdio_bz
+        return
+
     mcp_log.debug("api_key: Checking")
 
     api_key_header = getattr(cli_args, "api_key_header", "ApiKey")
@@ -501,6 +511,22 @@ def start():
     disable_components_selectively()
     disable_write_components()
 
-    mcp_log.info(f"Starting Bugzilla MCP server on {cli_args.host}:{cli_args.port}")
-
-    mcp.run(transport="http", host=cli_args.host, port=cli_args.port, show_banner=False)
+    if getattr(cli_args, "transport", "http") == "stdio":
+        global _stdio_bz
+        api_key = os.environ.get("BUGZILLA_API_KEY")
+        if not api_key:
+            mcp_log.critical("BUGZILLA_API_KEY environment variable is required in stdio mode. Exiting.")
+            import sys
+            sys.exit(1)
+        _stdio_bz = Bugzilla(
+            url=base_url,
+            api_key=api_key,
+            use_auth_header=getattr(cli_args, "use_auth_header", False),
+        )
+        # Disable HTTP-only tools in stdio mode
+        mcp.disable(keys={"get_current_headers_resource"})
+        mcp_log.info(f"Starting Bugzilla MCP server in stdio mode")
+        mcp.run(transport="stdio")
+    else:
+        mcp_log.info(f"Starting Bugzilla MCP server on {cli_args.host}:{cli_args.port}")
+        mcp.run(transport="http", host=cli_args.host, port=cli_args.port, show_banner=False)

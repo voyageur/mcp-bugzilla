@@ -40,7 +40,16 @@ def main():
     parser.add_argument(
         "--use-auth-header",
         action="store_true",
-        help="Use Authorization: Bearer header instead of api_key query parameter (required for some Bugzilla instances)",
+        default=os.getenv("USE_AUTH_HEADER", "false").lower() == "true",
+        help="Use Authorization: Bearer header instead of api_key query parameter (required for some Bugzilla instances). Environment variable USE_AUTH_HEADER=true can also be used.",
+    )
+
+    parser.add_argument(
+        "--transport",
+        type=str,
+        default=os.getenv("MCP_TRANSPORT", "http"),
+        choices=["http", "stdio"],
+        help="Transport mode: 'http' (default) for HTTP/SSE server, 'stdio' for CLI integration. Environment variable MCP_TRANSPORT can also be used.",
     )
 
     parser.add_argument(
